@@ -1,0 +1,10 @@
+crewai
+google-genai
+google-generativeai
+langchain-openai
+python-dotenv
+gTTS
+
+requests
+pyyaml
+mutagen

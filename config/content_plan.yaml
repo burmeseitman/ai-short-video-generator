@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Content Plan Configuration
+# Define your channel niche and the weekly content schedule here.
+# The planner reads this file to auto-select today's video topic.
+#
+# Each day entry has:
+#   category : the broad subject area for the day
+#   style    : the type of content angle to pick (LLM uses this as a guide)
+# ─────────────────────────────────────────────────────────────────────────────
+
+niche: "Tech & Productivity"
+
+schedule:
+  Monday:
+    category: "AI Tech"
+    style: "Trending or Research or Interesting"
+
+  Tuesday:
+    category: "Cybersecurity"
+    style: "Trending or Research or Interesting"
+
+  Wednesday:
+    category: "Computer Programming"
+    style: "Trending or Research or Interesting"
+
+  Thursday:
+    category: "True Story of Cyber Espionage or Cybercrime"
+    style: "Real historical event or case"
+
+  Friday:
+    category: "How-to Tutorial"
+    style: "Practical tech skill: VPS setup, Git, Linux commands, DevOps tools"
+
+  Saturday:
+    category: "AI Tech"
+    style: "Trending or Research or Interesting"
+
+  Sunday:
+    category: "Tech Review or Productivity Tips"
+    style: "Useful, practical, or interesting"
