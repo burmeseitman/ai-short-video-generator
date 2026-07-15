@@ -7,6 +7,7 @@ audio mixing, and color grading for professional short-form video output.
 
 import os
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from moviepy import (
     VideoFileClip, ImageClip, AudioFileClip, CompositeVideoClip,
     CompositeAudioClip, concatenate_videoclips, ColorClip, vfx
@@ -138,25 +139,45 @@ def duck_bgm(bgm_clip, voice_clips_with_timing, total_duration):
     return bgm_clip.transform(lambda gf, t: gf(t) * volume_func(t), keep_duration=True)
 
 
+# ── Font Loading Setup ──────────────────────────────────────────────────────────
+# Standard Myanmar Unicode compatible fonts on macOS
+MYANMAR_FONTS = [
+    "/System/Library/Fonts/NotoSansMyanmar.ttc",
+    "/System/Library/Fonts/Supplemental/Myanmar Sangam MN.ttc",
+    "/System/Library/Fonts/Supplemental/Myanmar MN.ttc",
+    "/System/Library/Fonts/NotoSerifMyanmar.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+]
+
+def get_best_font(font_size):
+    """
+    Returns the first available Myanmar-compatible font on the system,
+    falling back to default Pillow font if none exist.
+    """
+    from PIL import ImageFont
+    for path in MYANMAR_FONTS:
+        if os.path.exists(path):
+            try:
+                # Specify index=0 for TrueType Collections (.ttc)
+                return ImageFont.truetype(path, font_size, index=0)
+            except Exception:
+                continue
+    return ImageFont.load_default()
+
+
 def create_title_card(title, duration=INTRO_DURATION):
     """
     Create a simple dark title card with text.
     Uses Pillow for reliable text rendering (especially Myanmar).
     """
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 
     img = Image.new('RGB', (TARGET_W, TARGET_H), color=(17, 17, 17))
     draw = ImageDraw.Draw(img)
 
-    # Try to load a good font, fall back to default
     font_size = 72
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", font_size)
-    except:
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
-        except:
-            font = ImageFont.load_default()
+    font = get_best_font(font_size)
 
     # Word-wrap the title
     words = title.split()
@@ -197,8 +218,6 @@ def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     Render animated karaoke-style subtitles as a transparent overlay clip.
     Words appear progressively and the active word is highlighted in gold.
     """
-    from PIL import Image, ImageDraw, ImageFont
-
     words = text.split() if text else []
     if not words:
         return None
@@ -206,15 +225,8 @@ def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     fps = TARGET_FPS
     total_frames = int(duration * fps)
 
-    # Font setup
     font_size = 48
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", font_size)
-    except:
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
-        except:
-            font = ImageFont.load_default()
+    font = get_best_font(font_size)
 
     def make_frame(t):
         img = Image.new('RGBA', (width, height), (0, 0, 0, 0))

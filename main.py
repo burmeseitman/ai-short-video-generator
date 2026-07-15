@@ -14,67 +14,66 @@ from src.planner import pick_topic_for_today
 
 def parse_agent_output(output_text):
     """
-    Parses the TITLE and SCENES list (SCRIPT, VISUAL_PROMPT) from the agent output text.
+    Parses the TITLE and SCENES list (SCRIPT, VISUAL_PROMPT, SEARCH_QUERY) from the agent output text.
+    Handles console borders and markdown bold markers.
     """
+    # Clean up CrewAI console borders
+    lines = []
+    for line in output_text.split("\n"):
+        line = line.strip()
+        if line.startswith("│"):
+            line = line[1:]
+        if line.endswith("│"):
+            line = line[:-1]
+        line = line.strip()
+        if any(line.startswith(x) for x in ["├──", "╰──", "╭──", "└──", "┌──", "───", "──"]):
+            continue
+        lines.append(line)
+    cleaned = "\n".join(lines)
+
+    # Remove bold markers around keys and in general to simplify parsing
+    cleaned = cleaned.replace("**", "")
+
+    # Extract Title
     title = "New Short Video"
-    scenes = []
-
-    # Get TITLE
-    title_match = re.search(r"TITLE:\s*(.*)", output_text, re.IGNORECASE)
+    title_match = re.search(r"TITLE:\s*(.*)", cleaned, re.IGNORECASE)
     if title_match:
-        title = title_match.group(1).strip().strip("[]\"' ")
-        title = title.replace('\u10E2', '\u1010')
+        title = title_match.group(1).split("\n")[0].strip().strip("[]\"'* -")
 
-    # Try to find yaml-like SCENES section
-    scenes_section_match = re.search(r"SCENES:\s*(.*)", output_text, re.DOTALL | re.IGNORECASE)
-    if scenes_section_match:
-        scenes_block = scenes_section_match.group(1).strip()
+    scenes = []
+    # Split by SCRIPT lines
+    scene_blocks = re.split(r"-\s*SCRIPT:\s*", cleaned, flags=re.IGNORECASE)[1:]
+    for idx, block in enumerate(scene_blocks):
+        # Extract script (everything before VISUAL_PROMPT)
+        parts = re.split(r"VISUAL_PROMPT:", block, flags=re.IGNORECASE)
+        script = parts[0].strip().replace("\n", " ")
+        script = re.sub(r"\s+", " ", script).strip().strip("[]\"'* -")
         
-        # Clean markdown wrappers if any
-        scenes_block = re.sub(r"```(yaml|json)?", "", scenes_block).strip()
+        # Search queries and visual prompts within the block
+        prompt_match = re.search(r"VISUAL_PROMPT:\s*(.*?)(?=\s*(?:SEARCH_QUERY|TIME-STAMP|TIME_STAMP)|$)", block, re.DOTALL | re.IGNORECASE)
+        query_match = re.search(r"SEARCH_QUERY:\s*(.*?)(?=\s*(?:TIME-STAMP|TIME_STAMP|SCRIPT)|$)", block, re.DOTALL | re.IGNORECASE)
+        
+        prompt = prompt_match.group(1).strip().replace("\n", " ") if prompt_match else "abstract technology"
+        prompt = re.sub(r"\s+", " ", prompt).strip().strip("[]\"'* -")
+        
+        query = query_match.group(1).strip().replace("\n", " ") if query_match else prompt[:30]
+        query = re.sub(r"\s+", " ", query).strip().strip("[]\"'* -")
+        
+        # Normalise any Georgian/Myanmar character encoding anomalies
+        script = script.replace('\u10E2', '\u1010')
+        
+        scenes.append({
+            "SCRIPT": script,
+            "VISUAL_PROMPT": prompt,
+            "SEARCH_QUERY": query
+        })
 
-        try:
-            parsed_scenes = yaml.safe_load(scenes_block)
-            if isinstance(parsed_scenes, list):
-                for s in parsed_scenes:
-                    if isinstance(s, dict) and "SCRIPT" in s:
-                        script = s.get("SCRIPT", "").strip()
-                        prompt = s.get("VISUAL_PROMPT", s.get("KEYWORD", "technology")).strip()
-                        # Clean wrapping brackets, quotes, or markdown formatting
-                        script = script.strip("[]\"'").strip()
-                        prompt = prompt.strip("[]\"'").strip()
-                        # Normalise any hallucinated Georgian characters back to Myanmar Unicode
-                        script = script.replace('\u10E2', '\u1010')
-                        scenes.append({
-                            "SCRIPT": script,
-                            "VISUAL_PROMPT": prompt,
-                            "SEARCH_QUERY": s.get("SEARCH_QUERY", prompt[:30]).strip().strip("[]\"'")
-                        })
-
-        except Exception:
-            pass
-
-
-    # Fallback to Regex if YAML parsing fails
-    if not scenes:
-        script_prompt_pairs = re.findall(
-            r"-\s*SCRIPT:\s*(.*?)\s*\n\s*VISUAL_PROMPT:\s*(.*?)(?=\n\s*-|\n\s*\w+:|$)",
-            output_text,
-            re.DOTALL | re.IGNORECASE
-        )
-        for s, p in script_prompt_pairs:
-            cleaned_script = s.strip().replace('"', '').replace('\u10E2', '\u1010')
-            scenes.append({
-                "SCRIPT": cleaned_script,
-                "VISUAL_PROMPT": p.strip().replace('"', '')
-            })
-
-
-    # Last resort fallback: wrap whole text as 1 scene
+    # Last resort fallback: wrap whole text as 1 scene if parsing completely failed
     if not scenes:
         scenes.append({
             "SCRIPT": output_text,
-            "VISUAL_PROMPT": "A high-tech background loop, abstract data visualization"
+            "VISUAL_PROMPT": "A high-tech background loop, abstract data visualization",
+            "SEARCH_QUERY": "abstract technology"
         })
 
     return title, scenes
