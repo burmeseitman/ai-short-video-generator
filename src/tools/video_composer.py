@@ -216,86 +216,83 @@ def create_title_card(title, duration=INTRO_DURATION):
 def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     """
     Render animated karaoke-style subtitles as a transparent overlay clip.
-    Words appear progressively and the active word is highlighted in gold.
+    Splits long sentences into 4-word chunks for clean reading layout,
+    and returns a transparent clip with an alpha mask.
     """
     words = text.split() if text else []
     if not words:
         return None
 
-    fps = TARGET_FPS
-    total_frames = int(duration * fps)
+    # Group words into chunks of 4 words
+    chunk_size = 4
+    chunks = [words[i:i + chunk_size] for i in range(0, len(words), chunk_size)]
+    num_chunks = len(chunks)
+    chunk_duration = duration / num_chunks if num_chunks > 0 else duration
 
-    font_size = 48
+    fps = TARGET_FPS
+    font_size = 56
     font = get_best_font(font_size)
 
-    def make_frame(t):
+    def make_rgba_frame(t):
+        # Base transparent image
         img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        progress = t / duration if duration > 0 else 1.0
-        visible_count = min(len(words), int(progress * len(words) * 1.25) + 1)
-        active_idx = min(len(words) - 1, int(progress * len(words)))
+        # Active chunk index
+        chunk_idx = min(num_chunks - 1, int(t / chunk_duration))
+        active_chunk = chunks[chunk_idx]
 
-        visible_words = words[:visible_count]
-        if not visible_words:
-            return np.array(img)
+        # Active word index inside chunk
+        t_in_chunk = t - chunk_idx * chunk_duration
+        word_idx_in_chunk = min(len(active_chunk) - 1, int((t_in_chunk / chunk_duration) * len(active_chunk)))
 
-        # Calculate text layout (word wrap)
-        max_line_width = width - 80
-        lines_data = []
-        current_line_words = []
-        current_line_indices = []
+        chunk_text = " ".join(active_chunk)
+        bbox = draw.textbbox((0, 0), chunk_text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
 
-        for i, word in enumerate(visible_words):
-            test_line = ' '.join(current_line_words + [word])
-            bbox = draw.textbbox((0, 0), test_line, font=font)
-            if bbox[2] - bbox[0] > max_line_width and current_line_words:
-                lines_data.append((current_line_words[:], current_line_indices[:]))
-                current_line_words = [word]
-                current_line_indices = [i]
-            else:
-                current_line_words.append(word)
-                current_line_indices.append(i)
-        if current_line_words:
-            lines_data.append((current_line_words, current_line_indices))
+        # Center card layout
+        card_w = min(width - 60, text_w + 60)
+        card_h = text_h + 40
+        card_x = (width - card_w) // 2
+        card_y = height - card_h - int(height * 0.15)
 
-        # Draw background card
-        line_height = font_size + 16
-        total_h = len(lines_data) * line_height + 40
-        card_y = height - total_h - int(height * 0.12)
-        card_x = 30
-        card_w = width - 60
+        # Draw semi-transparent card background on canvas
+        overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        overlay_draw.rounded_rectangle(
+            [card_x, card_y, card_x + card_w, card_y + card_h],
+            radius=15,
+            fill=(0, 0, 0, 160)
+        )
+        img = Image.alpha_composite(img, overlay)
+        draw = ImageDraw.Draw(img)
 
-        # Semi-transparent background
-        overlay = Image.new('RGBA', (card_w, total_h), (0, 0, 0, 170))
-        img.paste(overlay, (card_x, card_y), overlay)
+        # Draw individual words
+        cursor_x = card_x + 30
+        y_pos = card_y + 20
 
-        # Draw words
-        for line_idx, (line_words, line_indices) in enumerate(lines_data):
-            line_text = ' '.join(line_words)
-            bbox = draw.textbbox((0, 0), line_text, font=font)
-            line_w = bbox[2] - bbox[0]
-            x_start = (width - line_w) // 2
-            y_pos = card_y + 20 + line_idx * line_height
+        for i, word in enumerate(active_chunk):
+            is_active = (i == word_idx_in_chunk)
+            color = (255, 215, 0, 255) if is_active else (255, 255, 255, 255)
 
-            cursor_x = x_start
-            for word, word_idx in zip(line_words, line_indices):
-                is_active = (word_idx == active_idx)
-                color = (255, 215, 0, 255) if is_active else (255, 255, 255, 255)
+            # Draw shadow
+            draw.text((cursor_x + 2, y_pos + 2), word, fill=(0, 0, 0, 200), font=font)
+            # Draw word
+            draw.text((cursor_x, y_pos), word, fill=color, font=font)
 
-                # Text shadow
-                draw.text((cursor_x + 2, y_pos + 2), word, fill=(0, 0, 0, 200), font=font)
-                draw.text((cursor_x, y_pos), word, fill=color, font=font)
-
-                word_bbox = draw.textbbox((0, 0), word + ' ', font=font)
-                cursor_x += word_bbox[2] - word_bbox[0]
+            word_bbox = draw.textbbox((0, 0), word + ' ', font=font)
+            cursor_x += word_bbox[2] - word_bbox[0]
 
         return np.array(img)
 
     from moviepy import VideoClip
-    subtitle_clip = VideoClip(make_frame, duration=duration)
-    subtitle_clip = subtitle_clip.with_fps(fps)
-    return subtitle_clip
+    # Extract RGB frames (shape: H, W, 3)
+    subtitle_clip = VideoClip(lambda t: make_rgba_frame(t)[:, :, :3], duration=duration)
+    # Extract alpha mask frames as values between 0.0 and 1.0 (shape: H, W)
+    mask_clip = VideoClip(lambda t: make_rgba_frame(t)[:, :, 3] / 255.0, duration=duration, is_mask=True)
+    
+    return subtitle_clip.with_mask(mask_clip).with_fps(fps)
 
 
 def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
