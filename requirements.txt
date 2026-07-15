@@ -8,3 +8,6 @@ gTTS
 requests
 pyyaml
 mutagen
+moviepy
+Pillow
+deep-translator

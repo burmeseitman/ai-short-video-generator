@@ -34,4 +34,11 @@ def create_shortform_agents():
         llm=writer_llm
     )
 
-    return researcher, writer, director
+    video_critic = Agent(
+        config=agents_config['video_critic'],
+        verbose=True,
+        allow_delegation=False,
+        llm=writer_llm
+    )
+
+    return researcher, writer, director, video_critic

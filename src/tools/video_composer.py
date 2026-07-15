@@ -1,0 +1,453 @@
+"""
+MoviePy Video Composer — Cinematic Post-Processing Engine
+
+Handles: Ken Burns zoom, crossfade transitions, BGM ducking,
+audio mixing, and color grading for professional short-form video output.
+"""
+
+import os
+import numpy as np
+from moviepy import (
+    VideoFileClip, ImageClip, AudioFileClip, CompositeVideoClip,
+    CompositeAudioClip, concatenate_videoclips, ColorClip, vfx
+)
+
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+TARGET_W, TARGET_H = 1080, 1920  # 9:16 portrait
+TARGET_FPS = 30
+CROSSFADE_SEC = 0.5
+BGM_VOLUME_SPEECH = 0.10   # 10% during voiceover
+BGM_VOLUME_SILENCE = 0.30  # 30% during silence gaps
+INTRO_DURATION = 3.0       # seconds
+
+
+def apply_ken_burns(clip, direction="zoom_in"):
+    """
+    Apply a slow Ken Burns zoom effect to a clip and center-crop to 1080×1920.
+    Works on both video clips and image clips.
+    """
+    duration = clip.duration
+    if duration is None or duration <= 0:
+        duration = 5.0
+
+    # We need extra resolution to zoom into, so we scale up first
+    base_w, base_h = clip.size
+
+    # Calculate the scale needed to fill 1080x1920 at minimum
+    scale_w = TARGET_W / base_w
+    scale_h = TARGET_H / base_h
+    base_scale = max(scale_w, scale_h) * 1.15  # 15% extra headroom for zoom
+
+    def zoom_factor(t):
+        progress = t / duration if duration > 0 else 0
+        if direction == "zoom_in":
+            return base_scale * (1.0 + 0.08 * progress)
+        else:  # zoom_out
+            return base_scale * (1.08 - 0.08 * progress)
+
+    def make_frame(get_frame, t):
+        frame = get_frame(t)
+        h, w = frame.shape[:2]
+        
+        factor = zoom_factor(t)
+        new_w = int(w * factor)
+        new_h = int(h * factor)
+
+        # Resize using PIL for quality
+        from PIL import Image
+        img = Image.fromarray(frame)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        frame = np.array(img)
+
+        # Center-crop to target
+        h2, w2 = frame.shape[:2]
+        cx, cy = w2 // 2, h2 // 2
+        x1 = max(0, cx - TARGET_W // 2)
+        y1 = max(0, cy - TARGET_H // 2)
+        x2 = x1 + TARGET_W
+        y2 = y1 + TARGET_H
+        
+        # Ensure we don't exceed bounds
+        if x2 > w2:
+            x1 = w2 - TARGET_W
+            x2 = w2
+        if y2 > h2:
+            y1 = h2 - TARGET_H
+            y2 = h2
+
+        cropped = frame[y1:y2, x1:x2]
+
+        # Safety: if crop is wrong size, pad with black
+        if cropped.shape[0] != TARGET_H or cropped.shape[1] != TARGET_W:
+            canvas = np.zeros((TARGET_H, TARGET_W, 3), dtype=np.uint8)
+            ch, cw = min(cropped.shape[0], TARGET_H), min(cropped.shape[1], TARGET_W)
+            canvas[:ch, :cw] = cropped[:ch, :cw]
+            return canvas
+
+        return cropped
+
+    return clip.transform(lambda gf, t: make_frame(gf, t), apply_to=['mask'])
+
+
+def load_media_clip(media_path, target_duration):
+    """
+    Load a video or image file and prepare it for the pipeline.
+    Videos are trimmed/looped to match target_duration.
+    Images are converted to clips of the target_duration.
+    """
+    ext = os.path.splitext(media_path)[1].lower()
+
+    if ext in ('.jpg', '.jpeg', '.png', '.webp'):
+        clip = ImageClip(media_path, duration=target_duration)
+    elif ext in ('.mp4', '.webm', '.mov', '.gif'):
+        clip = VideoFileClip(media_path)
+        # Loop short clips to fill the target duration
+        if clip.duration < target_duration:
+            loops_needed = int(np.ceil(target_duration / clip.duration))
+            clip = concatenate_videoclips([clip] * loops_needed)
+        clip = clip.subclipped(0, target_duration)
+    else:
+        # Fallback: treat as image
+        clip = ImageClip(media_path, duration=target_duration)
+
+    return clip
+
+
+def duck_bgm(bgm_clip, voice_clips_with_timing, total_duration):
+    """
+    Create a volume-ducked version of the BGM track.
+    Lowers volume during voiceover sections, raises it during silence.
+    
+    voice_clips_with_timing: list of (start_sec, end_sec) tuples
+    """
+    def volume_func(t):
+        for start, end in voice_clips_with_timing:
+            if start <= t <= end:
+                return BGM_VOLUME_SPEECH
+        return BGM_VOLUME_SILENCE
+
+    # Loop BGM if shorter than total duration
+    if bgm_clip.duration < total_duration:
+        loops_needed = int(np.ceil(total_duration / bgm_clip.duration))
+        bgm_clip = concatenate_videoclips([bgm_clip] * loops_needed) if hasattr(bgm_clip, 'video') else bgm_clip.fx(vfx.loop, duration=total_duration)
+    
+    bgm_clip = bgm_clip.subclipped(0, total_duration)
+    
+    # Apply volume ducking using a smooth function
+    return bgm_clip.transform(lambda gf, t: gf(t) * volume_func(t), keep_duration=True)
+
+
+def create_title_card(title, duration=INTRO_DURATION):
+    """
+    Create a simple dark title card with text.
+    Uses Pillow for reliable text rendering (especially Myanmar).
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    img = Image.new('RGB', (TARGET_W, TARGET_H), color=(17, 17, 17))
+    draw = ImageDraw.Draw(img)
+
+    # Try to load a good font, fall back to default
+    font_size = 72
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", font_size)
+    except:
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+
+    # Word-wrap the title
+    words = title.split()
+    lines = []
+    current_line = ""
+    for word in words:
+        test_line = f"{current_line} {word}".strip()
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        if bbox[2] - bbox[0] > TARGET_W - 120:
+            lines.append(current_line)
+            current_line = word
+        else:
+            current_line = test_line
+    if current_line:
+        lines.append(current_line)
+
+    # Draw centered text
+    total_text_height = len(lines) * (font_size + 20)
+    y_start = (TARGET_H - total_text_height) // 2
+
+    for i, line in enumerate(lines):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        text_w = bbox[2] - bbox[0]
+        x = (TARGET_W - text_w) // 2
+        y = y_start + i * (font_size + 20)
+
+        # Text shadow
+        draw.text((x + 3, y + 3), line, fill=(229, 9, 20), font=font)
+        # Main text
+        draw.text((x, y), line, fill=(255, 255, 255), font=font)
+
+    clip = ImageClip(np.array(img), duration=duration)
+    return clip.with_fps(TARGET_FPS)
+
+
+def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
+    """
+    Render animated karaoke-style subtitles as a transparent overlay clip.
+    Words appear progressively and the active word is highlighted in gold.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    words = text.split() if text else []
+    if not words:
+        return None
+
+    fps = TARGET_FPS
+    total_frames = int(duration * fps)
+
+    # Font setup
+    font_size = 48
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", font_size)
+    except:
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+
+    def make_frame(t):
+        img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        progress = t / duration if duration > 0 else 1.0
+        visible_count = min(len(words), int(progress * len(words) * 1.25) + 1)
+        active_idx = min(len(words) - 1, int(progress * len(words)))
+
+        visible_words = words[:visible_count]
+        if not visible_words:
+            return np.array(img)
+
+        # Calculate text layout (word wrap)
+        max_line_width = width - 80
+        lines_data = []
+        current_line_words = []
+        current_line_indices = []
+
+        for i, word in enumerate(visible_words):
+            test_line = ' '.join(current_line_words + [word])
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            if bbox[2] - bbox[0] > max_line_width and current_line_words:
+                lines_data.append((current_line_words[:], current_line_indices[:]))
+                current_line_words = [word]
+                current_line_indices = [i]
+            else:
+                current_line_words.append(word)
+                current_line_indices.append(i)
+        if current_line_words:
+            lines_data.append((current_line_words, current_line_indices))
+
+        # Draw background card
+        line_height = font_size + 16
+        total_h = len(lines_data) * line_height + 40
+        card_y = height - total_h - int(height * 0.12)
+        card_x = 30
+        card_w = width - 60
+
+        # Semi-transparent background
+        overlay = Image.new('RGBA', (card_w, total_h), (0, 0, 0, 170))
+        img.paste(overlay, (card_x, card_y), overlay)
+
+        # Draw words
+        for line_idx, (line_words, line_indices) in enumerate(lines_data):
+            line_text = ' '.join(line_words)
+            bbox = draw.textbbox((0, 0), line_text, font=font)
+            line_w = bbox[2] - bbox[0]
+            x_start = (width - line_w) // 2
+            y_pos = card_y + 20 + line_idx * line_height
+
+            cursor_x = x_start
+            for word, word_idx in zip(line_words, line_indices):
+                is_active = (word_idx == active_idx)
+                color = (255, 215, 0, 255) if is_active else (255, 255, 255, 255)
+
+                # Text shadow
+                draw.text((cursor_x + 2, y_pos + 2), word, fill=(0, 0, 0, 200), font=font)
+                draw.text((cursor_x, y_pos), word, fill=color, font=font)
+
+                word_bbox = draw.textbbox((0, 0), word + ' ', font=font)
+                cursor_x += word_bbox[2] - word_bbox[0]
+
+        return np.array(img)
+
+    from moviepy import VideoClip
+    subtitle_clip = VideoClip(make_frame, duration=duration)
+    subtitle_clip = subtitle_clip.with_fps(fps)
+    return subtitle_clip
+
+
+def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
+    """
+    Master composition function. Takes scene data and voice files,
+    produces a cinematic final video with transitions, ducking, and grading.
+    
+    Returns: path to the final rendered MP4
+    """
+    print("🎬 MoviePy Composer: Starting cinematic post-processing...")
+
+    scene_clips = []
+    voice_timings = []
+    current_time = INTRO_DURATION  # Account for intro card
+
+    # ── Step 1: Create Title Card ──────────────────────────────────────────────
+    print("  📝 Rendering title card...")
+    title_clip = create_title_card(title)
+    scene_clips.append(title_clip)
+
+    # ── Step 2: Process Each Scene ─────────────────────────────────────────────
+    for idx, (scene, voice_path) in enumerate(zip(scenes, voice_files)):
+        media_path = scene.get("VIDEO_PATH", "")
+        script_text = scene.get("SCRIPT", "")
+
+        if not media_path or not os.path.exists(media_path):
+            print(f"  ⚠️ Scene {idx + 1}: Missing media file, creating black placeholder")
+            media_path = None
+
+        # Get voiceover duration to match scene length
+        try:
+            voice_clip = AudioFileClip(voice_path)
+            scene_duration = voice_clip.duration + 0.5  # Small padding
+        except Exception as e:
+            print(f"  ⚠️ Scene {idx + 1}: Could not read voice file ({e}), using 10s default")
+            voice_clip = None
+            scene_duration = 10.0
+
+        print(f"  🎥 Scene {idx + 1}/{len(scenes)}: {scene_duration:.1f}s — Ken Burns + Subtitles...")
+
+        # Load and process media
+        if media_path:
+            media_clip = load_media_clip(media_path, scene_duration)
+        else:
+            media_clip = ColorClip(size=(TARGET_W, TARGET_H), color=(30, 30, 40), duration=scene_duration)
+
+        # Apply Ken Burns zoom + crop to portrait
+        directions = ["zoom_in", "zoom_out"]
+        media_clip = apply_ken_burns(media_clip, direction=directions[idx % 2])
+        media_clip = media_clip.with_duration(scene_duration)
+
+        # Render subtitle overlay
+        subtitle_clip = render_subtitle_overlay(script_text, scene_duration)
+
+        # Composite: media + subtitle overlay
+        if subtitle_clip:
+            scene_composite = CompositeVideoClip(
+                [media_clip, subtitle_clip.with_position(("center", "bottom"))],
+                size=(TARGET_W, TARGET_H)
+            ).with_duration(scene_duration)
+        else:
+            scene_composite = media_clip
+
+        # Attach voiceover audio
+        if voice_clip:
+            scene_composite = scene_composite.with_audio(voice_clip)
+
+        scene_clips.append(scene_composite)
+
+        # Track voice timing for BGM ducking
+        voice_timings.append((current_time, current_time + scene_duration - 0.5))
+        current_time += scene_duration
+
+    # ── Step 3: Crossfade Transitions ──────────────────────────────────────────
+    print("  ✨ Applying crossfade transitions...")
+    if len(scene_clips) > 1:
+        # Apply fade-in/fade-out for smooth transitions
+        processed_clips = [scene_clips[0]]
+        for i in range(1, len(scene_clips)):
+            clip = scene_clips[i]
+            clip = clip.with_effects([vfx.CrossFadeIn(CROSSFADE_SEC)])
+            processed_clips.append(clip)
+        
+        # Concatenate with crossfade padding
+        final_video = concatenate_videoclips(processed_clips, padding=-CROSSFADE_SEC, method="compose")
+    else:
+        final_video = scene_clips[0] if scene_clips else ColorClip(
+            size=(TARGET_W, TARGET_H), color=(0, 0, 0), duration=5
+        )
+
+    # ── Step 4: BGM Ducking & Audio Mix ────────────────────────────────────────
+    if bgm_path and os.path.exists(bgm_path):
+        print("  🎵 Mixing BGM with smart ducking...")
+        try:
+            bgm = AudioFileClip(bgm_path)
+            total_dur = final_video.duration
+
+            # Loop BGM if needed
+            if bgm.duration < total_dur:
+                loops = int(np.ceil(total_dur / bgm.duration))
+                from moviepy import concatenate_audioclips
+                bgm = concatenate_audioclips([bgm] * loops)
+            bgm = bgm.subclipped(0, total_dur)
+
+            # Apply ducking: lower volume during speech
+            def apply_ducking(get_frame, t):
+                audio_frame = get_frame(t)
+                if isinstance(t, np.ndarray):
+                    vol = np.full(t.shape, BGM_VOLUME_SILENCE)
+                    for start, end in voice_timings:
+                        vol[(t >= start) & (t <= end)] = BGM_VOLUME_SPEECH
+                    vol = vol.reshape(vol.shape + (1,) * (audio_frame.ndim - 1))
+                    return audio_frame * vol
+                else:
+                    vol = BGM_VOLUME_SILENCE
+                    for start, end in voice_timings:
+                        if start <= t <= end:
+                            vol = BGM_VOLUME_SPEECH
+                            break
+                    return audio_frame * vol
+
+            bgm = bgm.transform(apply_ducking, keep_duration=True)
+
+            # Mix BGM with existing audio
+            if final_video.audio:
+                mixed_audio = CompositeAudioClip([final_video.audio, bgm])
+                final_video = final_video.with_audio(mixed_audio)
+            else:
+                final_video = final_video.with_audio(bgm)
+        except Exception as e:
+            print(f"  ⚠️ BGM mixing failed ({e}), continuing without BGM")
+
+    # ── Step 5: Color Grading ──────────────────────────────────────────────────
+    print("  🎨 Applying color grading (contrast boost)...")
+    try:
+        # Subtle contrast enhancement
+        final_video = final_video.with_effects([vfx.LumContrast(lum=0, contrast=15, contrast_threshold=110)])
+    except Exception as e:
+        print(f"  ⚠️ Color grading skipped ({e})")
+
+    # ── Step 6: Render Final Output ────────────────────────────────────────────
+    output_path = os.path.join(run_dir, "final_video.mp4")
+    print(f"  🚀 Rendering final video to: {output_path}")
+    print(f"     Resolution: {TARGET_W}×{TARGET_H} | FPS: {TARGET_FPS}")
+    print(f"     Duration: {final_video.duration:.1f}s | Scenes: {len(scenes)}")
+
+    final_video.write_videofile(
+        output_path,
+        fps=TARGET_FPS,
+        codec="libx264",
+        audio_codec="aac",
+        bitrate="8000k",
+        preset="medium",
+        threads=4,
+        logger="bar"
+    )
+
+    # Cleanup
+    final_video.close()
+    for clip in scene_clips:
+        try:
+            clip.close()
+        except:
+            pass
+
+    print(f"  ✅ Final video rendered: {output_path}")
+    return output_path

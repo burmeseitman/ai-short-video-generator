@@ -47,7 +47,8 @@ def parse_agent_output(output_text):
                         script = script.replace('\u10E2', '\u1010')
                         scenes.append({
                             "SCRIPT": script,
-                            "VISUAL_PROMPT": prompt
+                            "VISUAL_PROMPT": prompt,
+                            "SEARCH_QUERY": s.get("SEARCH_QUERY", prompt[:30]).strip().strip("[]\"'")
                         })
 
         except Exception:
@@ -125,7 +126,7 @@ def main():
     print(f"📂 Run folder: {run_dir}")
 
     
-    print(f"🚀 [1/4] Starting CrewAI Automation for Topic: '{video_topic}'")
+    print(f"🚀 [1/5] Starting CrewAI Automation (+ Critic Review) for Topic: '{video_topic}'")
     crew_output = run_shortform_crew(video_topic)
     
     # Parse structured scene edits
@@ -137,7 +138,7 @@ def main():
     try:
         from deep_translator import GoogleTranslator
         translator = GoogleTranslator(source='en', target='my')
-        print("\n🌐 Translating English script to Myanmar (Free)...")
+        print("\n🌐 [2/5] Translating English script to Myanmar (Free)...")
         for scene in scenes:
             en_text = scene.get("SCRIPT", "")
             if en_text:
@@ -147,12 +148,12 @@ def main():
     except Exception as e:
         print(f"⚠️ Translation failed: {e}. Subtitles may be in English.")
 
-    # 1. Generate Voiceover for each scene
-    print("\n🔊 [2/4] Generating Scene-Level Myanmar Voiceovers...")
+    # 3. Generate Voiceover for each scene
+    print("\n🔊 [3/5] Generating Scene-Level Myanmar Voiceovers...")
     voice_files = generate_scene_voiceovers(scenes, run_dir=run_dir)
     
-    # 2. Generate Asset for each scene
-    print("\n📹 [3/4] Compiling Scene Assets (50% Pexels, 30% Unsplash, 20% Giphy)...")
+    # 4. Generate Asset for each scene
+    print("\n📹 [4/5] Compiling Scene Assets (50% Pexels, 30% Unsplash, 20% Giphy)...")
 
     # Target ratio: 50% Pexels, 30% Unsplash, 20% Giphy
     # Cycle of 10 to perfectly match the 5:3:2 ratio while ensuring visual variety
@@ -219,83 +220,47 @@ def main():
         scene["VIDEO_PATH"] = video_file
 
 
-    # 3. Export JSON and trigger Remotion
-    print("\n🎞️ [4/4] Rendering Dynamic Subtitled Video with Remotion...")
-    import json
-    import subprocess
+    # 3. Cinematic Post-Processing with MoviePy
+    print("\n🎞️ [5/5] MoviePy Cinematic Post-Processing (Transitions, Ducking, Grading)...")
     import shutil
+    from src.tools.video_composer import compose_final_video
 
-    # Fallback to copy an existing BGM since video_editor.py was removed
+    # Try to find a BGM file
     def get_bgm(output_path):
-        fallback_bgm = "remotion/public/runs/How_to_Use_AI_Chatbots_for_Dai_20260711_200252/bgm.mp3"
-        if os.path.exists(fallback_bgm):
-            shutil.copy(fallback_bgm, output_path)
-            return output_path
-        return ""
+        # Check for user-provided BGM in assets folder
+        assets_bgm_dir = "assets/bgm"
+        if os.path.isdir(assets_bgm_dir):
+            import random
+            bgm_files = [f for f in os.listdir(assets_bgm_dir) if f.endswith(('.mp3', '.wav', '.m4a'))]
+            if bgm_files:
+                chosen = os.path.join(assets_bgm_dir, random.choice(bgm_files))
+                shutil.copy(chosen, output_path)
+                print(f"  🎵 BGM selected: {os.path.basename(chosen)}")
+                return output_path
+
+        # Fallback: check for existing BGM from a previous run
+        for root, dirs, files in os.walk("remotion/public/runs"):
+            for f in files:
+                if f == "bgm.mp3":
+                    src = os.path.join(root, f)
+                    shutil.copy(src, output_path)
+                    print(f"  🎵 BGM fallback: {src}")
+                    return output_path
+        
+        print("  ⚠️ No BGM found. Video will have voiceover only.")
+        return None
 
     bgm_path = get_bgm(f"{run_dir}/bgm.mp3")
-    
-    render_scenes = []
-    total_frames = 0
-    fps = 30
-    
-    for idx, (scene, voice_path) in enumerate(zip(scenes, voice_files)):
-        # Calculate audio duration using mutagen
-        from mutagen.mp3 import MP3
-        audio = MP3(voice_path)
-        duration_sec = audio.info.length
-        
-        frames = int(duration_sec * fps)
-        total_frames += frames
-        
-        # Make paths relative to remotion/public for staticFile()
-        # Since remotion/public/runs is a symlink to output/runs, we can just use "runs/{run_name}/file"
-        run_name = os.path.basename(run_dir)
-        rel_video = f"runs/{run_name}/{os.path.basename(scene['VIDEO_PATH'])}"
-        rel_voice = f"runs/{run_name}/{os.path.basename(voice_path)}"
-            
-        render_scenes.append({
-            "videoPath": rel_video,
-            "voicePath": rel_voice,
-            "durationFrames": frames,
-            "text": scene.get("SCRIPT", ""),
-            "creditText": scene.get("CREDIT_TEXT", "")
-        })
 
-    # Add intro frames (3 seconds at 30 fps) to the total duration
-    total_frames += 90
+    final_video_path = compose_final_video(
+        scenes=scenes,
+        voice_files=voice_files,
+        run_dir=run_dir,
+        title=title,
+        bgm_path=bgm_path
+    )
 
-    # Ensure total duration meets the 60s minimum (1800 frames)
-    if total_frames < 1800:
-        total_frames = 1800
-
-    run_name = os.path.basename(run_dir)
-    rel_bgm = f"runs/{run_name}/{os.path.basename(bgm_path)}" if bgm_path else ""
-        
-    render_data = {
-        "title": title,
-        "totalDurationFrames": total_frames,
-        "bgmPath": rel_bgm,
-        "scenes": render_scenes
-    }
-
-    render_data_path = os.path.abspath(f"{run_dir}/render_data.json")
-    with open(render_data_path, "w", encoding="utf-8") as f:
-        json.dump(render_data, f, indent=2, ensure_ascii=False)
-        
-    abs_final_video_path = os.path.abspath(f"{run_dir}/final_video.mp4")
-    
-    print(f"🚀 Triggering Remotion Render (this may take a few minutes)...")
-    try:
-        subprocess.run(
-            ["npx", "remotion", "render", "src/index.ts", "MainVideo", abs_final_video_path, f"--props={render_data_path}"],
-            cwd="remotion",
-            check=True
-        )
-        print(f"✅ Video successfully rendered at: {abs_final_video_path}")
-        
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Remotion render failed: {e}")
+    print(f"\n🎉 Pipeline complete! Final video: {final_video_path}")
 
 if __name__ == "__main__":
     main()

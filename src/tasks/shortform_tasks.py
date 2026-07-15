@@ -8,7 +8,7 @@ config_path = os.path.join(root_dir, 'config', 'tasks.yaml')
 with open(config_path, 'r', encoding='utf-8') as f:
     tasks_config = yaml.safe_load(f)
 
-def create_shortform_tasks(researcher, writer, director, topic):
+def create_shortform_tasks(researcher, writer, director, video_critic, topic):
     # Inject topic into every task so all agents stay grounded to the specific subject
     research_desc   = tasks_config['research_task']['description'].format(topic=topic)
     research_output = tasks_config['research_task']['expected_output'].format(topic=topic)
@@ -18,6 +18,9 @@ def create_shortform_tasks(researcher, writer, director, topic):
 
     direct_desc     = tasks_config['direct_task']['description'].format(topic=topic)
     direct_output   = tasks_config['direct_task']['expected_output'].format(topic=topic)
+
+    critique_desc   = tasks_config['critique_task']['description'].format(topic=topic)
+    critique_output = tasks_config['critique_task']['expected_output'].format(topic=topic)
 
     research_task = Task(
         description=research_desc,
@@ -39,4 +42,11 @@ def create_shortform_tasks(researcher, writer, director, topic):
         context=[research_task, write_task]
     )
 
-    return research_task, write_task, direct_task
+    critique_task = Task(
+        description=critique_desc,
+        expected_output=critique_output,
+        agent=video_critic,
+        context=[direct_task, write_task]
+    )
+
+    return research_task, write_task, direct_task, critique_task
