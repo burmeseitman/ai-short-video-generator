@@ -6,3 +6,8 @@ output/
 .agents/
 remotion/public/runs/
 scratch/
+node_modules/
+**/node_modules/
+.venv/
+env/
+venv/
