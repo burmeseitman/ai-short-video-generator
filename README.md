@@ -63,15 +63,6 @@ python main.py "How to spot a phishing email"
 
 The output video will be generated under `runs/YYYYMMDD_[topic]/final_video.mp4`.
 
----
-
-## Legacy Remotion Code (Deprecated)
-The `remotion/` directory contains the legacy React-based video rendering codebase. 
-This has been **deprecated** in favor of the new Python-based MoviePy engine which runs natively in Python with dynamic asset routing, advanced BGM ducking, and custom Myanmar Unicode cluster-safe wrapping. 
-
-You can safely delete the `remotion/` folder if you want to clean up the codebase.
-
----
 
 ## Deployment & Automation Guide
 
