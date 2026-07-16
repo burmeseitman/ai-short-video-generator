@@ -142,9 +142,9 @@ def duck_bgm(bgm_clip, voice_clips_with_timing, total_duration):
 # ── Font Loading Setup ──────────────────────────────────────────────────────────
 # Standard Myanmar Unicode compatible fonts on macOS
 MYANMAR_FONTS = [
-    "/System/Library/Fonts/NotoSansMyanmar.ttc",
     "/System/Library/Fonts/Supplemental/Myanmar Sangam MN.ttc",
     "/System/Library/Fonts/Supplemental/Myanmar MN.ttc",
+    "/System/Library/Fonts/NotoSansMyanmar.ttc",
     "/System/Library/Fonts/NotoSerifMyanmar.ttc",
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"

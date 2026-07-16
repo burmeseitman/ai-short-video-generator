@@ -15,8 +15,10 @@ from src.planner import pick_topic_for_today
 def parse_agent_output(output_text):
     """
     Parses the TITLE and SCENES list (SCRIPT, VISUAL_PROMPT, SEARCH_QUERY) from the agent output text.
-    Handles console borders and markdown bold markers.
+    Handles console borders, markdown bold markers, JSON formats, and numbered lists.
+    Strips out SSML tags from the script text before translating/processing.
     """
+    import json
     # Clean up CrewAI console borders
     lines = []
     for line in output_text.split("\n"):
@@ -37,42 +39,71 @@ def parse_agent_output(output_text):
     # Extract Title
     title = "New Short Video"
     title_match = re.search(r"TITLE:\s*(.*)", cleaned, re.IGNORECASE)
+    if not title_match:
+        # Search JSON title key
+        title_match = re.search(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned, re.IGNORECASE)
     if title_match:
         title = title_match.group(1).split("\n")[0].strip().strip("[]\"'* -")
 
     scenes = []
-    # Split by SCRIPT lines (handles both '- SCRIPT:' and '1. SCRIPT:')
-    split_pattern = r"(?:-\s*|\d+\.\s*)SCRIPT:\s*"
-    scene_blocks = re.split(split_pattern, cleaned, flags=re.IGNORECASE)[1:]
+
+    # ── Option 1: Parse JSON block regex ───────────────────────────────────────
+    # We find all scene objects like { "SCRIPT": ..., "SEARCH_QUERY": ... }
+    json_blocks = re.findall(r'\{([^}]+)\}', cleaned, re.DOTALL)
+    for block in json_blocks:
+        if "script" in block.lower():
+            # Match double-quoted strings supporting escaped quotes inside
+            script_match = re.search(r'"script"\s*:\s*"((?:[^"\\]|\\.)*)"', block, re.IGNORECASE | re.DOTALL)
+            query_match = re.search(r'"search_query"\s*:\s*"((?:[^"\\]|\\.)*)"', block, re.IGNORECASE | re.DOTALL)
+            
+            if script_match:
+                script = script_match.group(1).replace('\\"', '"').replace('\\n', ' ').strip()
+                # Remove SSML tags to keep text clean for translation and gTTS
+                script = re.sub(r'<[^>]+>', '', script)
+                
+                query = query_match.group(1).replace('\\"', '"').replace('\\n', ' ').strip() if query_match else "technology"
+                scenes.append({
+                    "SCRIPT": script,
+                    "VISUAL_PROMPT": query,
+                    "SEARCH_QUERY": query
+                })
+                
+    if scenes:
+        print(f"  ✅ Parser: Successfully extracted {len(scenes)} scenes from JSON template.")
+        return title, scenes
+
+    # ── Option 2: Parse standard layout (splitting by scene numbers/bullets) ────
+    scene_blocks = re.split(r"(?:\n|^)(?:-\s*|\d+\.\s*|Scene\s*\d+\s*:)", cleaned, flags=re.IGNORECASE)
+    # Skip intro block if it does not contain keywords
+    if scene_blocks and not any(k in scene_blocks[0].lower() for k in ["script", "timestamp", "time-stamp"]):
+        scene_blocks = scene_blocks[1:]
+        
     for idx, block in enumerate(scene_blocks):
-        # Extract script (everything before VISUAL_PROMPT)
-        parts = re.split(r"VISUAL_PROMPT:", block, flags=re.IGNORECASE)
-        script = parts[0].strip().replace("\n", " ")
+        if not block.strip():
+            continue
+            
+        script_match = re.search(r"SCRIPT:\s*(.*?)(?=\s*(?:SEARCH_QUERY|ASSET_TYPE|TIME[-_]?STAMP|VISUAL_PROMPT)|$)", block, re.DOTALL | re.IGNORECASE)
+        script = script_match.group(1).strip() if script_match else block.strip()
+        script = script.replace("\n", " ")
         script = re.sub(r"\s+", " ", script).strip().strip("[]\"'* -")
+        script = re.sub(r'<[^>]+>', '', script)  # Remove SSML tags
         
-        # Search queries and visual prompts within the block
-        prompt_match = re.search(r"VISUAL_PROMPT:\s*(.*?)(?=\s*(?:SEARCH_QUERY|TIME-STAMP|TIME_STAMP)|$)", block, re.DOTALL | re.IGNORECASE)
-        query_match = re.search(r"SEARCH_QUERY:\s*(.*?)(?=\s*(?:TIME-STAMP|TIME_STAMP|SCRIPT)|$)", block, re.DOTALL | re.IGNORECASE)
-        
-        prompt = prompt_match.group(1).strip().replace("\n", " ") if prompt_match else "abstract technology"
-        prompt = re.sub(r"\s+", " ", prompt).strip().strip("[]\"'* -")
-        
-        query = query_match.group(1).strip().replace("\n", " ") if query_match else prompt[:30]
+        query_match = re.search(r"SEARCH_QUERY:\s*(.*?)(?=\s*(?:TIME[-_]?STAMP|ASSET_TYPE|SCRIPT)|$)", block, re.DOTALL | re.IGNORECASE)
+        query = query_match.group(1).strip() if query_match else "abstract technology"
+        query = query.replace("\n", " ")
         query = re.sub(r"\s+", " ", query).strip().strip("[]\"'* -")
-        
-        # Normalise any Georgian/Myanmar character encoding anomalies
-        script = script.replace('\u10E2', '\u1010')
         
         scenes.append({
             "SCRIPT": script,
-            "VISUAL_PROMPT": prompt,
+            "VISUAL_PROMPT": query,
             "SEARCH_QUERY": query
         })
 
-    # Last resort fallback: wrap whole text as 1 scene if parsing completely failed
+    # ── Last Resort Fallback ───────────────────────────────────────────────────
     if not scenes:
+        print("  ⚠️  Parser warning: Layout parser failed. Using fallback mode.")
         scenes.append({
-            "SCRIPT": output_text,
+            "SCRIPT": re.sub(r'<[^>]+>', '', output_text),
             "VISUAL_PROMPT": "A high-tech background loop, abstract data visualization",
             "SEARCH_QUERY": "abstract technology"
         })
