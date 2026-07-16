@@ -23,6 +23,22 @@ BGM_VOLUME_SILENCE = 0.30  # 30% during silence gaps
 INTRO_DURATION = 3.0       # seconds
 
 
+# Select Resize Filter option from env (caching globally once to avoid env lookups in loops)
+def _get_resize_filter_type():
+    filter_name = os.getenv("RESIZE_FILTER", "LANCZOS").strip().upper()
+    filters = {
+        "NEAREST": Image.NEAREST,
+        "BOX": Image.BOX,
+        "BILINEAR": Image.BILINEAR,
+        "HAMMING": Image.HAMMING,
+        "BICUBIC": Image.BICUBIC,
+        "LANCZOS": Image.LANCZOS
+    }
+    return filters.get(filter_name, Image.LANCZOS)
+
+RESIZE_FILTER_OPTION = _get_resize_filter_type()
+
+
 def apply_ken_burns(clip, direction="zoom_in"):
     """
     Apply a slow Ken Burns zoom effect to a clip and center-crop to 1080×1920.
@@ -55,10 +71,9 @@ def apply_ken_burns(clip, direction="zoom_in"):
         new_w = int(w * factor)
         new_h = int(h * factor)
 
-        # Resize using PIL for quality
-        from PIL import Image
+        # Resize using PIL for quality (Avoid inner loop imports)
         img = Image.fromarray(frame)
-        img = img.resize((new_w, new_h), Image.LANCZOS)
+        img = img.resize((new_w, new_h), RESIZE_FILTER_OPTION)
         frame = np.array(img)
 
         # Center-crop to target
@@ -553,14 +568,17 @@ def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
     print(f"     Resolution: {TARGET_W}×{TARGET_H} | FPS: {TARGET_FPS}")
     print(f"     Duration: {final_video.duration:.1f}s | Scenes: {len(scenes)}")
 
+    preset = os.getenv("RENDER_PRESET", "medium").strip().lower()
+    threads = int(os.getenv("RENDER_THREADS", "4"))
+
     final_video.write_videofile(
         output_path,
         fps=TARGET_FPS,
         codec="libx264",
         audio_codec="aac",
         bitrate="8000k",
-        preset="medium",
-        threads=4,
+        preset=preset,
+        threads=threads,
         logger="bar"
     )
 
