@@ -61,7 +61,7 @@ To bypass user prompts and run the pipeline asynchronously (great for scripting 
 python main.py "How to spot a phishing email"
 ```
 
-The output video will be generated under `remotion/public/runs/YYYYMMDD_[topic]/final_video.mp4`.
+The output video will be generated under `runs/YYYYMMDD_[topic]/final_video.mp4`.
 
 ---
 
@@ -86,7 +86,7 @@ docker build -t ai-video-generator .
 #### Run Container
 Ensure you pass your environment variables using `-e` or an `--env-file`:
 ```bash
-docker run --network="host" --env-file .env -v "$(pwd)/remotion/public/runs:/app/remotion/public/runs" ai-video-generator "Zero-Day Attack"
+docker run --network="host" --env-file .env -v "$(pwd)/runs:/app/runs" ai-video-generator "Zero-Day Attack"
 ```
 *Note: `--network="host"` is recommended if accessing Ollama running on `localhost:11434` outside the container.*
 

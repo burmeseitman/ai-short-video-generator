@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 output/
 .agents/
-remotion/public/runs/
+runs/
 scratch/
 node_modules/
 **/node_modules/

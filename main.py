@@ -149,7 +149,7 @@ def main():
     def make_run_dir(topic):
         safe = re.sub(r'[^a-zA-Z0-9]+', '_', topic.lower()).strip('_')[:50]
         name = f"{today.strftime('%Y%m%d')}_{safe}"
-        path = f"remotion/public/runs/{name}"
+        path = f"runs/{name}"
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -284,7 +284,7 @@ def main():
                 return output_path
 
         # Fallback: check for existing BGM from a previous run
-        for root, dirs, files in os.walk("remotion/public/runs"):
+        for root, dirs, files in os.walk("runs"):
             for f in files:
                 if f == "bgm.mp3":
                     src = os.path.join(root, f)
