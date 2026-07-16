@@ -472,13 +472,8 @@ def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
         except Exception as e:
             print(f"  ⚠️ BGM mixing failed ({e}), continuing without BGM")
 
-    # ── Step 5: Color Grading ──────────────────────────────────────────────────
-    print("  🎨 Applying color grading (contrast boost)...")
-    try:
-        # Subtle contrast enhancement
-        final_video = final_video.with_effects([vfx.LumContrast(lum=0, contrast=15, contrast_threshold=110)])
-    except Exception as e:
-        print(f"  ⚠️ Color grading skipped ({e})")
+    # ── Step 5: Color Grading (Removed as requested) ───────────────────────────
+    pass
 
     # ── Step 6: Render Final Output ────────────────────────────────────────────
     output_path = os.path.join(run_dir, "final_video.mp4")
