@@ -1,12 +1,12 @@
 # AI Short Video Generator
 
-An automated pipeline for generating cinematic, commercial-grade short-form videos (TikTok, YouTube Shorts, Reels) using 100% free external stock APIs, local AI models (CrewAI), and a custom MoviePy composition engine.
+An automated pipeline for generating cinematic short-form videos (TikTok, YouTube Shorts, Reels) using 100% free external stock APIs, local AI models (CrewAI), and a custom MoviePy composition engine.
 
 ## Features
 
 - **Local & Hybrid Multi-Agent System (CrewAI):**
   - **Researcher:** Uncovers controversial or high-retention facts on any given topic.
-  - **Script Writer:** Natively writes conversational Burmese (အပြောစတိုင်) scripts with raw storyteller flow, formatted with SSML pacing tags.
+  - **Script Writer:** Natively writes conversational Burmese scripts with raw storyteller flow, formatted with SSML pacing tags.
   - **Director:** Mathematically breaks the script timeline into sequential 3-to-5 second scenes and maps them to visual cues.
   - **Video Critic (QA Gatekeeper):** Enforces rigid structural audit on timings, asset continuity, and query intent before rendering.
 - **Dynamic Curation-Driven Sourcing:**
@@ -49,13 +49,66 @@ An automated pipeline for generating cinematic, commercial-grade short-form vide
 
 ## Usage
 
-Run the main pipeline script and enter your topic:
+### Interactive Mode
+Run the main script and enter your topic at the prompt:
 ```bash
 python main.py
 ```
-*(You can also pass the topic as a command line argument: `python main.py "How to spot a phishing email"`)*
+
+### Manual Override Argument (Non-Interactive)
+To bypass user prompts and run the pipeline asynchronously (great for scripting and servers):
+```bash
+python main.py "How to spot a phishing email"
+```
 
 The output video will be generated under `remotion/public/runs/YYYYMMDD_[topic]/final_video.mp4`.
+
+---
+
+## Deployment & Automation Guide
+
+### 1. Docker Setup (Containerized Execution)
+Running in Docker is the most reliable way to deploy, as it packages `ffmpeg` and Noto Myanmar fonts automatically.
+
+#### Build the Image
+```bash
+docker build -t ai-video-generator .
+```
+
+#### Run Container
+Ensure you pass your environment variables using `-e` or an `--env-file`:
+```bash
+docker run --network="host" --env-file .env -v "$(pwd)/remotion/public/runs:/app/remotion/public/runs" ai-video-generator "Zero-Day Attack"
+```
+*Note: `--network="host"` is recommended if accessing Ollama running on `localhost:11434` outside the container.*
+
+---
+
+### 2. Cron Job Scheduling (Linux)
+You can schedule the video generator to run on a daily schedule automatically.
+
+#### Step 1: Create a shell runner (`run_pipeline.sh`)
+Create a wrapper script to load paths and activate the virtual environment:
+```bash
+#!/bin/bash
+cd /path/to/ai-short-video-generator
+source .venv/bin/activate
+export PYTHONPATH=.
+python main.py >> cron_execution.log 2>&1
+```
+Make it executable: `chmod +x run_pipeline.sh`
+
+#### Step 2: Add to Crontab
+Open the cron scheduler:
+```bash
+crontab -e
+```
+Add a rule to run the script automatically every day at 8:00 AM:
+```cron
+0 8 * * * /path/to/ai-short-video-generator/run_pipeline.sh
+```
+
+---
 
 ## License
 MIT

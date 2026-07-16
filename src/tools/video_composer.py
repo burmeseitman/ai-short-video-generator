@@ -146,7 +146,9 @@ MYANMAR_FONTS = [
     "/System/Library/Fonts/Supplemental/Myanmar MN.ttc",
     "/System/Library/Fonts/NotoSansMyanmar.ttc",
     "/System/Library/Fonts/NotoSerifMyanmar.ttc",
-    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansMyanmar-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansMyanmar-Bold.ttf",
+    "/usr/share/fonts/Supplemental/Arial Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 ]
 
