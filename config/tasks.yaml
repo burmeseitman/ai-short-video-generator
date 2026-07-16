@@ -1,66 +1,58 @@
 research_task:
   description: >
-    Research at least 3 compelling and interesting facts specifically about: '{topic}'.
-    Focus only on this topic. Then identify at least 3 relevant English keywords suitable
-    for searching video backgrounds related to '{topic}', and output them in the format:
-    'Keywords: [values]'.
+    Conduct deep, high-retention research on the provided '{topic}'. Extract at least 3 jaw-dropping, 
+    highly unusual, or controversial facts tailored for short-form engagement. Identify a single, 
+    highly optimized English search keyword designed for royalty-free stock media platforms to discover 
+    evocative background assets. Output the data cleanly, focusing exclusively on the core topic.
   expected_output: >
-    A list of specific facts about '{topic}' and English keywords for video background searches.
+    A list of 3 high-impact facts and a single, targeted English keyword optimized for stock asset searches.
 
 write_task:
   description: >
-    Using the researched facts about '{topic}', write an engaging English language
-    script specifically about '{topic}' for a Shorts/TikTok video.
-    The entire script MUST stay focused on '{topic}' — do not drift to other subjects.
-    Write in a casual, conversational storytelling style that grabs and holds attention. 
-    Hook the viewer in the very first line.
-    
-    CRITICAL INSTRUCTIONS:
-    1. Write exactly 6 lines — one line per scene.
-    2. Each line must be very long and highly detailed, around 25-35 words, so that it takes about 12-15 seconds of spoken voice to read. This ensures the final video is strictly over 60 seconds (1 minute) long.
+    Using the researched facts, write a gripping, fast-paced short-form video script entirely in highly 
+    conversational, spoken-style Burmese (အပြောစတိုင်). The script must hook the viewer in the first 2 seconds 
+    and completely avoid dry, literary language. 
+
+    CRITICAL EXECUTION INSTRUCTIONS:
+    You must format the final script output natively using SSML (Speech Synthesis Markup Language) tags to control pacing. 
+    1. Embed `<break time="300ms"/>` or `<break time="500ms"/>` tags at natural human breathing gaps and sentence boundaries.
+    2. Wrap high-impact terms or core keywords inside `<emphasis level="strong">...</emphasis>` tags to force a dramatic audio delivery.
+    3. Ensure the complete spoken script duration totals roughly 45 to 60 seconds of natural speech.
   expected_output: >
-    An engaging, grammatically correct English language script with exactly 6 long lines.
+    A verified, high-retention conversational Burmese script fully wrapped and formatted inside standard SSML tags.
 
 direct_task:
   description: >
-    Read the provided English script about '{topic}' and break it down into exactly 6 scene cuts.
-    For each scene, keep the SCRIPT line exactly as written in English.
-    Then design the visual perspective, camera shot, lighting, and detailed English prompt
-    for an AI video generator. All visuals MUST be relevant to '{topic}'.
-    Output ONLY in the exact format below — no extra text, no markdown wrappers:
+    Analyze the generated Burmese SSML script, estimate its timing, and mathematically break the timeline down 
+    into a continuous storyboard of strict 3-to-5 second sequential scenes. 
+    For each scene block, keep the exact Burmese SSML script portion assigned to it. 
 
-    TITLE: [Video title about {topic} with relevant hashtags]
+    ASSET CURATION DICTATES:
+    Since this workflow relies strictly on royalty-free stock media instead of AI generation, you must determine 
+    the best specific asset type for each scene block. Assign either: 'PHOTO' (for abrupt dramatic pauses), 'VIDEO' 
+    (for smooth cinematic transitions), or 'GIF' (for high-energy loops). Provide optimized English search keywords 
+    tailored to pull accurate matching files from stock websites.
+
+    Strictly maintain the format below with no extra text or markdown wrappers:
+
+    TITLE: [Video title with relevant viral hashtags]
 
     SCENES:
-    - SCRIPT: [English narration line 1 — keep original text]
-      VISUAL_PROMPT: [Detailed English AI Video Generator prompt matching this scene and '{topic}' (e.g. Cinematic shot of..., camera perspective, lighting, high detail)]
-      SEARCH_QUERY: [1-3 English keywords for stock video search (e.g. futuristic city)]
-    - SCRIPT: [English narration line 2 — keep original text]
-      VISUAL_PROMPT: [Detailed English AI Video Generator prompt matching this scene and '{topic}']
-      SEARCH_QUERY: [1-3 English keywords]
-    - SCRIPT: [English narration line 3 — keep original text]
-      VISUAL_PROMPT: [Detailed English AI Video Generator prompt matching this scene and '{topic}']
-      SEARCH_QUERY: [1-3 English keywords]
-    - SCRIPT: [English narration line 4 — keep original text]
-      VISUAL_PROMPT: [Detailed English AI Video Generator prompt matching this scene and '{topic}']
-      SEARCH_QUERY: [1-3 English keywords]
-    - SCRIPT: [English narration line 5 — keep original text]
-      VISUAL_PROMPT: [Detailed English AI Video Generator prompt matching this scene and '{topic}']
-      SEARCH_QUERY: [1-3 English keywords]
-    - SCRIPT: [English narration line 6 — keep original text]
-      VISUAL_PROMPT: [Detailed English AI Video Generator prompt matching this scene and '{topic}']
-      SEARCH_QUERY: [1-3 English keywords]
+    - TIMESTAMP: [e.g., 0s-4s]
+      ASSET_TYPE: [PHOTO, VIDEO, or GIF]
+      SCRIPT: [Exact Burmese SSML snippet for this block]
+      SEARCH_QUERY: [1-3 precise English keywords for stock site searching]
   expected_output: >
-    A structured text output containing TITLE and exactly 6 SCENES.
-    Each SCRIPT must be in English. Each VISUAL_PROMPT must be in English.
-    All content focused on '{topic}', in the exact specified format.
+    A structured layout string defining the TITLE and a strict sequential list of SCENES mapped with precise timestamps, asset types, and queries.
 
 critique_task:
   description: >
-    Take the SCENE_FLOW generated by the Director and the English script generated by the Writer. 
-    Review each scene's time-stamps (e.g., 0s-4s, 4s-9s) to guarantee the pacing is mathematically correct. 
-    Audit the recommended asset types (Photos, Videos, GIFs) and search queries to ensure visual continuity 
-    and that they accurately represent the '{topic}' topic without breaking the narrative flow. 
-    Output only the finalized, approved structural layout data in the same TITLE + SCENES format as the Director.
+    Act as a brutal quality assurance gatekeeper. Audit the Director's output structural layout and match it against the Writer's Burmese script. 
+    Ensure absolute precision across three checkpoints:
+    1. Pacing Validation: Mathematically cross-check that all scene timestamps stack up flawlessly to equal the total estimated audio duration.
+    2. Asset Continuity: Verify that the designated ASSET_TYPE switches frequently enough to sustain maximum viewer retention without visual monotony.
+    3. Query Audit: Reject generic search keywords; ensure all English SEARCH_QUERY values are sharp, relevant to '{topic}', and high-intent.
+
+    Output the finalized blueprint using the exact same format provided by the Director.
   expected_output: >
-    A verified and clean structured format containing TITLE and exactly 6 SCENES with finalized SCRIPT, VISUAL_PROMPT, and SEARCH_QUERY for each scene.
+    A verified and clean structured format containing the approved TITLE and sequential SCENES with finalized TIMESTAMP, ASSET_TYPE, SCRIPT, and SEARCH_QUERY keys.
