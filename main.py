@@ -165,17 +165,28 @@ def main():
     print(f"\n✨ Generated Title: {title}")
     print(f"📋 Total Scenes Extracted: {len(scenes)}")
 
-    # Translate English script to Myanmar
+    # Translate English script to Myanmar if not already translated (agent-level Burmese bypass)
+    def is_burmese(text):
+        return bool(re.search(r'[\u1000-\u109f]', text))
+
+    translated_count = 0
+    skipped_count = 0
     try:
         from deep_translator import GoogleTranslator
         translator = GoogleTranslator(source='en', target='my')
         print("\n🌐 [2/5] Translating English script to Myanmar (Free)...")
         for scene in scenes:
-            en_text = scene.get("SCRIPT", "")
-            if en_text:
-                my_text = translator.translate(en_text)
-                scene["SCRIPT"] = my_text
-                print(f"  En: {en_text[:40]}... -> My: {my_text[:40]}...")
+            text = scene.get("SCRIPT", "")
+            if text:
+                if is_burmese(text):
+                    skipped_count += 1
+                else:
+                    my_text = translator.translate(text)
+                    scene["SCRIPT"] = my_text
+                    translated_count += 1
+                    print(f"  En: {text[:40]}... -> My: {my_text[:40]}...")
+        if skipped_count > 0:
+            print(f"  ℹ️  Detected native Burmese script: Skipped translation for {skipped_count} scenes.")
     except Exception as e:
         print(f"⚠️ Translation failed: {e}. Subtitles may be in English.")
 
@@ -184,15 +195,18 @@ def main():
     voice_files = generate_scene_voiceovers(scenes, run_dir=run_dir)
     
     # 4. Generate Asset for each scene
-    print("\n📹 [4/5] Compiling Scene Assets (50% Pexels, 30% Unsplash, 20% Giphy)...")
+    print("\n📹 [4/5] Compiling Scene Assets...")
 
-    # Target ratio: 50% Pexels, 30% Unsplash, 20% Giphy
-    # Cycle of 10 to perfectly match the 5:3:2 ratio while ensuring visual variety
-    source_cycle = [
-        "pexels", "unsplash", "pexels", "giphy", "pexels", 
-        "unsplash", "pexels", "unsplash", "pexels", "giphy"
-    ]
-    scene_sources = [source_cycle[i % 10] for i in range(len(scenes))]
+    # Determine asset sources dynamically based on Director/Critic storyboard ASSET_TYPE
+    scene_sources = []
+    for scene in scenes:
+        asset_type = scene.get("ASSET_TYPE", "VIDEO")
+        if asset_type == "PHOTO":
+            scene_sources.append("unsplash")
+        elif asset_type == "GIF":
+            scene_sources.append("giphy")
+        else:
+            scene_sources.append("pexels")
 
     pexels_api_key = os.getenv("PEXELS_API_KEY")
     from src.tools.pexels_tool import download_pexels_video
