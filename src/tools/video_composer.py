@@ -213,11 +213,34 @@ def create_title_card(title, duration=INTRO_DURATION):
     return clip.with_fps(TARGET_FPS)
 
 
+def split_grapheme_clusters(text):
+    """
+    Splits Myanmar/English text into a list of individual renderable grapheme clusters.
+    Ensures combining marks stay attached to their base characters.
+    """
+    import re
+    clusters = []
+    current = ""
+    # Range of Myanmar combining marks, English diacritics, and zero-width characters
+    combining_pattern = re.compile(r'[\u102b-\u103e\u1056-\u1097\u200b-\u200d\u0300-\u036f]')
+    
+    for char in text:
+        if combining_pattern.match(char) and current:
+            current += char
+        else:
+            if current:
+                clusters.append(current)
+            current = char
+    if current:
+        clusters.append(current)
+    return clusters
+
+
 def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     """
     Render animated karaoke-style subtitles as a transparent overlay clip.
     Strips emojis/control characters to prevent tofu boxes, splits long
-    runs for wrapping, and renders wrapped text on an adaptive layout card.
+    runs safely at grapheme cluster boundaries, and renders wrapped text.
     """
     import re
     if not text:
@@ -228,16 +251,30 @@ def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
     clean_text = re.sub(r'[\u200b-\u200d]', '', clean_text)
 
-    # Step 2: Split long strings/compounds (highly critical for spacing-free Burmese)
-    raw_words = clean_text.split()
+    # Step 2: Segment safely at space, punctuation, or grapheme boundaries (Burmese Unicode safe)
+    raw_tokens = re.split(r'(\s+|။|၊)', clean_text)
     words = []
-    for w in raw_words:
-        if len(w) > 12:
-            # Segment into sub-words of 8 characters for clean wrapping
-            for i in range(0, len(w), 8):
-                words.append(w[i:i+8])
+    
+    for token in raw_tokens:
+        if not token or not token.strip():
+            continue
+        if token in ["။", "၊"]:
+            if words:
+                words[-1] += token
+            else:
+                words.append(token)
+            continue
+            
+        if len(token) > 12:
+            # Segment long space-free compound words at cluster boundaries
+            clusters = split_grapheme_clusters(token)
+            chunk_size = 8
+            for i in range(0, len(clusters), chunk_size):
+                sub_word = "".join(clusters[i:i+chunk_size])
+                if sub_word:
+                    words.append(sub_word)
         else:
-            words.append(w)
+            words.append(token)
 
     if not words:
         return None
