@@ -149,6 +149,8 @@ def save_topic_to_history(topic: str):
     history_file = "data/topic_history.json"
     os.makedirs(os.path.dirname(history_file), exist_ok=True)
     history = _load_history()
+    # Filter out any existing entries with the same topic (case-insensitive) to prevent duplicates
+    history = [h for h in history if h.get("topic", "").strip().lower() != topic.strip().lower()]
     history.append({
         "topic": topic,
         "date": datetime.now().isoformat()
