@@ -216,14 +216,33 @@ def create_title_card(title, duration=INTRO_DURATION):
 def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     """
     Render animated karaoke-style subtitles as a transparent overlay clip.
-    Splits long sentences into 4-word chunks for clean reading layout,
-    and returns a transparent clip with an alpha mask.
+    Strips emojis/control characters to prevent tofu boxes, splits long
+    runs for wrapping, and renders wrapped text on an adaptive layout card.
     """
-    words = text.split() if text else []
+    import re
+    if not text:
+        return None
+
+    # Step 1: Strip emojis and control characters to avoid tofu boxes
+    clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
+    clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
+    clean_text = re.sub(r'[\u200b-\u200d]', '', clean_text)
+
+    # Step 2: Split long strings/compounds (highly critical for spacing-free Burmese)
+    raw_words = clean_text.split()
+    words = []
+    for w in raw_words:
+        if len(w) > 12:
+            # Segment into sub-words of 8 characters for clean wrapping
+            for i in range(0, len(w), 8):
+                words.append(w[i:i+8])
+        else:
+            words.append(w)
+
     if not words:
         return None
 
-    # Group words into chunks of 4 words
+    # Step 3: Group into chunks of 4 words
     chunk_size = 4
     chunks = [words[i:i + chunk_size] for i in range(0, len(words), chunk_size)]
     num_chunks = len(chunks)
@@ -234,7 +253,7 @@ def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     font = get_best_font(font_size)
 
     def make_rgba_frame(t):
-        # Base transparent image
+        # Base transparent canvas
         img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
@@ -246,16 +265,36 @@ def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
         t_in_chunk = t - chunk_idx * chunk_duration
         word_idx_in_chunk = min(len(active_chunk) - 1, int((t_in_chunk / chunk_duration) * len(active_chunk)))
 
-        chunk_text = " ".join(active_chunk)
-        bbox = draw.textbbox((0, 0), chunk_text, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
+        # Define bounds and sizing
+        line_height = font_size + 16
+        max_content_w = width - 120  # Max printable text width: 960px
+
+        # ── Simulation Pass ──
+        # Simulates laying out words to find exact card width & height
+        sim_x = 0
+        sim_y = 0
+        max_sim_w = 0
+        
+        for idx, word in enumerate(active_chunk):
+            word_bbox = draw.textbbox((0, 0), word + ' ', font=font)
+            word_w = word_bbox[2] - word_bbox[0]
+            
+            # Wrap to next line if exceeds boundary
+            if sim_x + word_w > max_content_w and sim_x > 0:
+                sim_x = 0
+                sim_y += line_height
+                
+            sim_x += word_w
+            max_sim_w = max(max_sim_w, sim_x)
+
+        total_text_w = max_sim_w
+        total_text_h = sim_y + (font_size + 10)
 
         # Center card layout
-        card_w = min(width - 60, text_w + 60)
-        card_h = text_h + 40
+        card_w = min(width - 60, total_text_w + 60)
+        card_h = total_text_h + 40
         card_x = (width - card_w) // 2
-        card_y = height - card_h - int(height * 0.15)
+        card_y = height - card_h - int(height * 0.15)  # Position at bottom 15%
 
         # Draw semi-transparent card background on canvas
         overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
@@ -268,21 +307,29 @@ def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
         img = Image.alpha_composite(img, overlay)
         draw = ImageDraw.Draw(img)
 
-        # Draw individual words
+        # ── Rendering Pass ──
+        # Layout and render words dynamically
         cursor_x = card_x + 30
-        y_pos = card_y + 20
+        cursor_y = card_y + 20
 
         for i, word in enumerate(active_chunk):
+            word_bbox = draw.textbbox((0, 0), word + ' ', font=font)
+            word_w = word_bbox[2] - word_bbox[0]
+
+            # Wrap to next line if word exceeds width
+            if cursor_x + word_w > card_x + 30 + max_content_w and cursor_x > card_x + 30:
+                cursor_x = card_x + 30
+                cursor_y += line_height
+
             is_active = (i == word_idx_in_chunk)
             color = (255, 215, 0, 255) if is_active else (255, 255, 255, 255)
 
             # Draw shadow
-            draw.text((cursor_x + 2, y_pos + 2), word, fill=(0, 0, 0, 200), font=font)
+            draw.text((cursor_x + 2, cursor_y + 2), word, fill=(0, 0, 0, 200), font=font)
             # Draw word
-            draw.text((cursor_x, y_pos), word, fill=color, font=font)
+            draw.text((cursor_x, cursor_y), word, fill=color, font=font)
 
-            word_bbox = draw.textbbox((0, 0), word + ' ', font=font)
-            cursor_x += word_bbox[2] - word_bbox[0]
+            cursor_x += word_w
 
         return np.array(img)
 

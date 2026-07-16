@@ -41,8 +41,9 @@ def parse_agent_output(output_text):
         title = title_match.group(1).split("\n")[0].strip().strip("[]\"'* -")
 
     scenes = []
-    # Split by SCRIPT lines
-    scene_blocks = re.split(r"-\s*SCRIPT:\s*", cleaned, flags=re.IGNORECASE)[1:]
+    # Split by SCRIPT lines (handles both '- SCRIPT:' and '1. SCRIPT:')
+    split_pattern = r"(?:-\s*|\d+\.\s*)SCRIPT:\s*"
+    scene_blocks = re.split(split_pattern, cleaned, flags=re.IGNORECASE)[1:]
     for idx, block in enumerate(scene_blocks):
         # Extract script (everything before VISUAL_PROMPT)
         parts = re.split(r"VISUAL_PROMPT:", block, flags=re.IGNORECASE)
