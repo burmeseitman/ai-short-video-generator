@@ -379,6 +379,15 @@ def render_subtitle_overlay(text, duration, width=TARGET_W, height=TARGET_H):
     return subtitle_clip.with_mask(mask_clip).with_fps(fps)
 
 
+def format_srt_time(seconds):
+    """Formats raw seconds into standard SRT timestamp HH:MM:SS,mmm"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
 def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
     """
     Master composition function. Takes scene data and voice files,
@@ -388,8 +397,12 @@ def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
     """
     print("🎬 MoviePy Composer: Starting cinematic post-processing...")
 
+    # Load configuration from environment
+    render_subtitles = os.getenv("RENDER_SUBTITLES", "True").strip().lower() in ["true", "on", "1", "yes"]
+
     scene_clips = []
     voice_timings = []
+    srt_entries = []
     current_time = INTRO_DURATION  # Account for intro card
 
     # ── Step 1: Create Title Card ──────────────────────────────────────────────
@@ -415,7 +428,12 @@ def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
             voice_clip = None
             scene_duration = 10.0
 
-        print(f"  🎥 Scene {idx + 1}/{len(scenes)}: {scene_duration:.1f}s — Ken Burns + Subtitles...")
+        # Build subtitle timing entry
+        start_t = current_time
+        end_t = current_time + scene_duration
+        srt_entries.append((idx + 1, start_t, end_t, script_text))
+
+        print(f"  🎥 Scene {idx + 1}/{len(scenes)}: {scene_duration:.1f}s — Processing media (Subtitles: {'ON' if render_subtitles else 'OFF'})...")
 
         # Load and process media
         if media_path:
@@ -428,8 +446,10 @@ def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
         media_clip = apply_ken_burns(media_clip, direction=directions[idx % 2])
         media_clip = media_clip.with_duration(scene_duration)
 
-        # Render subtitle overlay
-        subtitle_clip = render_subtitle_overlay(script_text, scene_duration)
+        # Render subtitle overlay if enabled
+        subtitle_clip = None
+        if render_subtitles:
+            subtitle_clip = render_subtitle_overlay(script_text, scene_duration)
 
         # Composite: media + subtitle overlay
         if subtitle_clip:
@@ -449,6 +469,19 @@ def compose_final_video(scenes, voice_files, run_dir, title, bgm_path=None):
         # Track voice timing for BGM ducking
         voice_timings.append((current_time, current_time + scene_duration - 0.5))
         current_time += scene_duration
+
+    # Write standalone SRT subtitle file if on-screen overlays are disabled
+    if not render_subtitles:
+        srt_path = os.path.join(run_dir, "subtitles.srt")
+        try:
+            with open(srt_path, "w", encoding="utf-8") as f:
+                for num, start_t, end_t, text in srt_entries:
+                    f.write(f"{num}\n")
+                    f.write(f"{format_srt_time(start_t)} --> {format_srt_time(end_t)}\n")
+                    f.write(f"{text}\n\n")
+            print(f"  📝 Standing Subtitles written to: {srt_path}")
+        except Exception as srt_err:
+            print(f"  ⚠️ Failed to write SRT subtitles file: {srt_err}")
 
     # ── Step 3: Crossfade Transitions ──────────────────────────────────────────
     print("  ✨ Applying crossfade transitions...")

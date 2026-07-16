@@ -39,6 +39,7 @@ An automated pipeline for generating cinematic, commercial-grade short-form vide
    # Model configurations (Qwen 2.5 local model via Ollama recommended)
    AI_MODEL=ollama/qwen2.5:14b
    WRITER_MODEL=ollama/qwen2.5:14b
+   RENDER_SUBTITLES=True  # Set to False to disable on-screen overlays and generate a standalone subtitles.srt
 
    # Stock keys
    PEXELS_API_KEY=your-pexels-key
